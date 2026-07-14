@@ -302,7 +302,7 @@ export default function App() {
     setSaveStates(prev => ({ ...prev, [type]: 'saved' }))
     setTimeout(() => {
       setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
-    }, 1500)
+    }, 1500);
 
     (async () => {
       let insertedId = tempId

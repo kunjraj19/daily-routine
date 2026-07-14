@@ -48,10 +48,10 @@ export default function App() {
   const [adminReport, setAdminReport] = useState([])
   
   const [settings, setSettings] = useState({
-    openrouter_key: localStorage.getItem('openrouter_key') || import.meta.env.VITE_OPENROUTER_API_KEY || '',
-    openrouter_model: localStorage.getItem('openrouter_model') || import.meta.env.VITE_OPENROUTER_MODEL || 'google/gemini-2.5-flash',
-    user_password: localStorage.getItem('user_password') || import.meta.env.VITE_USER_PASSWORD || 'secret123',
-    admin_password: localStorage.getItem('admin_password') || import.meta.env.VITE_ADMIN_PASSWORD || 'admin123',
+    openrouter_key: import.meta.env.VITE_OPENROUTER_API_KEY || localStorage.getItem('openrouter_key') || '',
+    openrouter_model: import.meta.env.VITE_OPENROUTER_MODEL || localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash',
+    user_password: import.meta.env.VITE_USER_PASSWORD || localStorage.getItem('user_password') || 'secret123',
+    admin_password: import.meta.env.VITE_ADMIN_PASSWORD || localStorage.getItem('admin_password') || 'admin123',
     user_weakness: localStorage.getItem('user_weakness') || ''
   })
 

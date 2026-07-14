@@ -305,9 +305,10 @@ export default function App() {
     const supabase = getSupabase()
     if (supabase) {
       try {
+        const { id, ...supabaseMeal } = newMeal
         await supabase
           .from('meals')
-          .insert([newMeal])
+          .insert([supabaseMeal])
       } catch (err) {
         console.error("Supabase insert error", err)
       }

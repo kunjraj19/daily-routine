@@ -62,8 +62,8 @@ export default function App() {
     user_password: localStorage.getItem('user_password') || '',
     admin_password: localStorage.getItem('admin_password') || '',
     user_weakness: localStorage.getItem('user_weakness') || '',
-    supabase_url: localStorage.getItem('supabase_url') || '',
-    supabase_key: localStorage.getItem('supabase_key') || ''
+    supabase_url: import.meta.env.VITE_SUPABASE_URL || localStorage.getItem('supabase_url') || '',
+    supabase_key: import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_key') || ''
   })
 
   useEffect(() => {

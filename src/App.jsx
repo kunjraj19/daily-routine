@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import { 
   Lock, LogOut, Settings, Save, AlertCircle, Sparkles, CheckCircle2, 
   Coffee, Utensils, Moon, Candy, CupSoda, Calendar
@@ -60,7 +61,9 @@ export default function App() {
     openrouter_model: localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash',
     user_password: localStorage.getItem('user_password') || '',
     admin_password: localStorage.getItem('admin_password') || '',
-    user_weakness: localStorage.getItem('user_weakness') || ''
+    user_weakness: localStorage.getItem('user_weakness') || '',
+    supabase_url: localStorage.getItem('supabase_url') || '',
+    supabase_key: localStorage.getItem('supabase_key') || ''
   })
 
   useEffect(() => {
@@ -69,7 +72,18 @@ export default function App() {
     localStorage.setItem('openrouter_key', settings.openrouter_key)
     localStorage.setItem('openrouter_model', settings.openrouter_model)
     localStorage.setItem('user_weakness', settings.user_weakness)
+    localStorage.setItem('supabase_url', settings.supabase_url)
+    localStorage.setItem('supabase_key', settings.supabase_key)
   }, [settings])
+
+  const isSupabaseConfigured = !!(settings.supabase_url && settings.supabase_key)
+
+  const getSupabase = () => {
+    const url = settings.supabase_url || localStorage.getItem('supabase_url')
+    const key = settings.supabase_key || localStorage.getItem('supabase_key')
+    if (!url || !key) return null
+    return createClient(url, key)
+  }
 
   useEffect(() => {
     if (token && role === 'user') {
@@ -153,10 +167,30 @@ export default function App() {
     setRole('')
   }
 
-  const loadDayData = () => {
-    const db = getLocalDb()
-    const dayMeals = db.filter(m => m.date === selectedDate)
+  const loadDayData = async () => {
+    let dayMeals = []
+    const supabase = getSupabase()
     
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('meals')
+          .select('*')
+          .eq('date', selectedDate)
+          .eq('sports', 'nutrition')
+        if (!error && data) {
+          dayMeals = data
+        }
+      } catch (err) {
+        console.error("Supabase load error", err)
+      }
+    }
+    
+    if (dayMeals.length === 0) {
+      const db = getLocalDb()
+      dayMeals = db.filter(m => m.date === selectedDate)
+    }
+
     const newLoggedMeals = { breakfast: [], lunch: [], dinner: [], snack: [], juice: [] }
     let macros = { calories: 0, protein: 0, carbs: 0, fat: 0 }
     let micros = { vitamin_c: 0, vitamin_d: 0, vitamin_a: 0, calcium: 0, iron: 0 }
@@ -262,10 +296,22 @@ export default function App() {
       date: selectedDate,
       meal_type: type,
       food_name: foodName,
-      ...nutrients
+      ...nutrients,
+      sports: 'nutrition'
     }
     db.push(newMeal)
     saveLocalDb(db)
+
+    const supabase = getSupabase()
+    if (supabase) {
+      try {
+        await supabase
+          .from('meals')
+          .insert([newMeal])
+      } catch (err) {
+        console.error("Supabase insert error", err)
+      }
+    }
 
     triggerAlert('success', `Saved ${type} successfully!`)
     setMeals(prev => ({ ...prev, [type]: '' }))
@@ -278,8 +324,28 @@ export default function App() {
 
   const runAiAnalysis = async (customDate) => {
     const activeDate = customDate || selectedDate
-    const db = getLocalDb()
-    const dayMeals = db.filter(m => m.date === activeDate)
+    let dayMeals = []
+    const supabase = getSupabase()
+    
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('meals')
+          .select('*')
+          .eq('date', activeDate)
+          .eq('sports', 'nutrition')
+        if (!error && data) {
+          dayMeals = data
+        }
+      } catch (err) {
+        console.error("Supabase load error in AI analysis", err)
+      }
+    }
+
+    if (dayMeals.length === 0) {
+      const db = getLocalDb()
+      dayMeals = db.filter(m => m.date === activeDate)
+    }
     
     if (dayMeals.length === 0) {
       setAiAnalysis("No meals logged for today yet. Add meals to see analysis.")
@@ -342,8 +408,28 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
     }
   }
 
-  const loadAdminReport = () => {
-    const db = getLocalDb()
+  const loadAdminReport = async () => {
+    let db = []
+    const supabase = getSupabase()
+
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('meals')
+          .select('*')
+          .eq('sports', 'nutrition')
+        if (!error && data) {
+          db = data
+        }
+      } catch (err) {
+        console.error("Supabase report load error", err)
+      }
+    }
+
+    if (db.length === 0) {
+      db = getLocalDb()
+    }
+
     const report = {}
     db.forEach(r => {
       const dateStr = r.date
@@ -407,9 +493,22 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
     }
   }
 
-  const clearAllData = () => {
+  const clearAllData = async () => {
     if (window.confirm("Are you sure you want to delete all logged meals and reset the database?")) {
       localStorage.removeItem('meals_db')
+      
+      const supabase = getSupabase()
+      if (supabase) {
+        try {
+          await supabase
+            .from('meals')
+            .delete()
+            .eq('sports', 'nutrition')
+        } catch (err) {
+          console.error("Supabase clear error", err)
+        }
+      }
+
       triggerAlert('success', 'Database cleared successfully!')
       loadDayData()
       if (role === 'admin') {
@@ -492,7 +591,42 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
 
         <header className="glass-card dashboard-header">
           <div className="header-title-section">
-            <h1>Daily Routine Tracker - Admin Panel</h1>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <h1 style={{ margin: 0 }}>Daily Routine Tracker - Admin Panel</h1>
+              {isSupabaseConfigured ? (
+                <span style={{ 
+                  background: 'rgba(16, 185, 129, 0.15)', 
+                  color: '#a7f3d0', 
+                  border: '1px solid rgba(16, 185, 129, 0.3)', 
+                  padding: '0.2rem 0.6rem', 
+                  borderRadius: '20px', 
+                  fontSize: '0.72rem', 
+                  fontWeight: '700',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                  Cloud Synced
+                </span>
+              ) : (
+                <span style={{ 
+                  background: 'rgba(245, 158, 11, 0.15)', 
+                  color: '#fde68a', 
+                  border: '1px solid rgba(245, 158, 11, 0.3)', 
+                  padding: '0.2rem 0.6rem', 
+                  borderRadius: '20px', 
+                  fontSize: '0.72rem', 
+                  fontWeight: '700',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}></span>
+                  Offline Mode
+                </span>
+              )}
+            </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
               System reports & lacking nutrition records
             </p>
@@ -615,6 +749,26 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                     onChange={(e) => setSettings({ ...settings, admin_password: e.target.value })}
                   />
                 </div>
+                <div className="input-group">
+                  <label className="input-label">Supabase URL (Optional)</label>
+                  <input 
+                    type="text" 
+                    className="glass-input" 
+                    value={settings.supabase_url || ''}
+                    onChange={(e) => setSettings({ ...settings, supabase_url: e.target.value })}
+                    placeholder="https://your-project.supabase.co"
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Supabase Anon Key (Optional)</label>
+                  <input 
+                    type="password" 
+                    className="glass-input" 
+                    value={settings.supabase_key || ''}
+                    onChange={(e) => setSettings({ ...settings, supabase_key: e.target.value })}
+                    placeholder="eyJhbGci..."
+                  />
+                </div>
                 <div className="modal-footer">
                   <button type="button" className="control-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5', marginRight: 'auto' }} onClick={clearAllData}>
                     Clear Data
@@ -650,7 +804,42 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
 
       <header className="glass-card dashboard-header">
         <div className="header-title-section">
-          <h1>Daily Routine Tracker</h1>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h1 style={{ margin: 0 }}>Daily Routine Tracker</h1>
+            {isSupabaseConfigured ? (
+              <span style={{ 
+                background: 'rgba(16, 185, 129, 0.15)', 
+                color: '#a7f3d0', 
+                border: '1px solid rgba(16, 185, 129, 0.3)', 
+                padding: '0.2rem 0.6rem', 
+                borderRadius: '20px', 
+                fontSize: '0.72rem', 
+                fontWeight: '700',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem'
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block' }}></span>
+                Cloud Synced
+              </span>
+            ) : (
+              <span style={{ 
+                background: 'rgba(245, 158, 11, 0.15)', 
+                color: '#fde68a', 
+                border: '1px solid rgba(245, 158, 11, 0.3)', 
+                padding: '0.2rem 0.6rem', 
+                borderRadius: '20px', 
+                fontSize: '0.72rem', 
+                fontWeight: '700',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.3rem'
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}></span>
+                Offline Mode
+              </span>
+            )}
+          </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
             Smart nutrition planner & analytics
           </p>
@@ -859,6 +1048,26 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                   className="glass-input" 
                   value={settings.admin_password || ''}
                   onChange={(e) => setSettings({ ...settings, admin_password: e.target.value })}
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Supabase URL (Optional)</label>
+                <input 
+                  type="text" 
+                  className="glass-input" 
+                  value={settings.supabase_url || ''}
+                  onChange={(e) => setSettings({ ...settings, supabase_url: e.target.value })}
+                  placeholder="https://your-project.supabase.co"
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Supabase Anon Key (Optional)</label>
+                <input 
+                  type="password" 
+                  className="glass-input" 
+                  value={settings.supabase_key || ''}
+                  onChange={(e) => setSettings({ ...settings, supabase_key: e.target.value })}
+                  placeholder="eyJhbGci..."
                 />
               </div>
               <div className="modal-footer">

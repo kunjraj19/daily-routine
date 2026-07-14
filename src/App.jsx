@@ -24,6 +24,7 @@ export default function App() {
     snack: '',
     juice: ''
   })
+  
   const [loggedMeals, setLoggedMeals] = useState({
     breakfast: [],
     lunch: [],
@@ -31,6 +32,7 @@ export default function App() {
     snack: [],
     juice: []
   })
+  
   const [saveStates, setSaveStates] = useState({
     breakfast: 'idle',
     lunch: 'idle',
@@ -46,12 +48,20 @@ export default function App() {
   const [adminReport, setAdminReport] = useState([])
   
   const [settings, setSettings] = useState({
-    openrouter_key: '',
-    openrouter_model: '',
-    user_password: '',
-    admin_password: '',
-    user_weakness: ''
+    openrouter_key: localStorage.getItem('openrouter_key') || import.meta.env.VITE_OPENROUTER_API_KEY || '',
+    openrouter_model: localStorage.getItem('openrouter_model') || import.meta.env.VITE_OPENROUTER_MODEL || 'google/gemini-2.5-flash',
+    user_password: localStorage.getItem('user_password') || import.meta.env.VITE_USER_PASSWORD || 'secret123',
+    admin_password: localStorage.getItem('admin_password') || import.meta.env.VITE_ADMIN_PASSWORD || 'admin123',
+    user_weakness: localStorage.getItem('user_weakness') || ''
   })
+
+  useEffect(() => {
+    localStorage.setItem('user_password', settings.user_password)
+    localStorage.setItem('admin_password', settings.admin_password)
+    localStorage.setItem('openrouter_key', settings.openrouter_key)
+    localStorage.setItem('openrouter_model', settings.openrouter_model)
+    localStorage.setItem('user_weakness', settings.user_weakness)
+  }, [settings])
 
   useEffect(() => {
     if (token && role === 'user') {
@@ -70,40 +80,31 @@ export default function App() {
     setTimeout(() => setAlert(null), 4000)
   }
 
-  const loadAdminReport = async () => {
-    try {
-      const res = await fetch('/api/admin/report', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setAdminReport(data)
-      }
-    } catch (err) {
-      triggerAlert('error', 'Failed to retrieve admin report')
-    }
+  const getLocalDb = () => {
+    const data = localStorage.getItem('meals_db')
+    return data ? JSON.parse(data) : []
   }
 
-  const handleLogin = async (e) => {
+  const saveLocalDb = (db) => {
+    localStorage.setItem('meals_db', JSON.stringify(db))
+  }
+
+  const handleLogin = (e) => {
     e.preventDefault()
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        localStorage.setItem('app_token', data.token)
-        localStorage.setItem('app_role', data.role)
-        setToken(data.token)
-        setRole(data.role)
-        setLoginError('')
-      } else {
-        setLoginError('Invalid credentials')
-      }
-    } catch (err) {
-      setLoginError('Server error')
+    if (password === settings.user_password) {
+      localStorage.setItem('app_token', password)
+      localStorage.setItem('app_role', 'user')
+      setToken(password)
+      setRole('user')
+      setLoginError('')
+    } else if (password === settings.admin_password) {
+      localStorage.setItem('app_token', password)
+      localStorage.setItem('app_role', 'admin')
+      setToken(password)
+      setRole('admin')
+      setLoginError('')
+    } else {
+      setLoginError('Invalid credentials')
     }
   }
 
@@ -114,116 +115,185 @@ export default function App() {
     setRole('')
   }
 
-  const loadDayData = async () => {
-    try {
-      const res = await fetch(`/api/meals?date=${selectedDate}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.status === 401) {
-        handleLogout()
-        return
+  const loadDayData = () => {
+    const db = getLocalDb()
+    const dayMeals = db.filter(m => m.date === selectedDate)
+    
+    const newLoggedMeals = { breakfast: [], lunch: [], dinner: [], snack: [], juice: [] }
+    let macros = { calories: 0, protein: 0, carbs: 0, fat: 0 }
+    let micros = { vitamin_c: 0, vitamin_d: 0, vitamin_a: 0, calcium: 0, iron: 0 }
+
+    dayMeals.forEach(m => {
+      if (m.meal_type in newLoggedMeals) {
+        newLoggedMeals[m.meal_type].push(m.food_name)
       }
-      if (res.ok) {
-        const data = await res.json()
-        const newLoggedMeals = { breakfast: [], lunch: [], dinner: [], snack: [], juice: [] }
-        
-        let macros = { calories: 0, protein: 0, carbs: 0, fat: 0 }
-        let micros = { vitamin_c: 0, vitamin_d: 0, vitamin_a: 0, calcium: 0, iron: 0 }
+      macros.calories += m.calories || 0
+      macros.protein += m.protein || 0
+      macros.carbs += m.carbs || 0
+      macros.fat += m.fat || 0
 
-        data.forEach(m => {
-          if (m.meal_type in newLoggedMeals) {
-            newLoggedMeals[m.meal_type].push(m.food_name)
-          }
-          macros.calories += m.calories || 0
-          macros.protein += m.protein || 0
-          macros.carbs += m.carbs || 0
-          macros.fat += m.fat || 0
+      micros.vitamin_c += m.vitamin_c || 0
+      micros.vitamin_d += m.vitamin_d || 0
+      micros.vitamin_a += m.vitamin_a || 0
+      micros.calcium += m.calcium || 0
+      micros.iron += m.iron || 0
+    })
 
-          micros.vitamin_c += m.vitamin_c || 0
-          micros.vitamin_d += m.vitamin_d || 0
-          micros.vitamin_a += m.vitamin_a || 0
-          micros.calcium += m.calcium || 0
-          micros.iron += m.iron || 0
-        })
+    setLoggedMeals(newLoggedMeals)
+    
+    setNutrientData([
+      { name: 'Calories (kcal/10)', value: Math.round(macros.calories / 10) },
+      { name: 'Protein (g)', value: Math.round(macros.protein) },
+      { name: 'Carbs (g)', value: Math.round(macros.carbs) },
+      { name: 'Fat (g)', value: Math.round(macros.fat) }
+    ])
 
-        setLoggedMeals(newLoggedMeals)
-        
-        setNutrientData([
-          { name: 'Calories (kcal/10)', value: Math.round(macros.calories / 10) },
-          { name: 'Protein (g)', value: Math.round(macros.protein) },
-          { name: 'Carbs (g)', value: Math.round(macros.carbs) },
-          { name: 'Fat (g)', value: Math.round(macros.fat) }
-        ])
-
-        setMicroData([
-          { subject: 'Vit C (mg)', A: Math.round(micros.vitamin_c), fullMark: 100 },
-          { subject: 'Vit D (mcg)', A: Math.round(micros.vitamin_d * 5), fullMark: 100 },
-          { subject: 'Vit A (mcg/10)', A: Math.round(micros.vitamin_a / 10), fullMark: 100 },
-          { subject: 'Calcium (mg/10)', A: Math.round(micros.calcium / 10), fullMark: 100 },
-          { subject: 'Iron (mg)', A: Math.round(micros.iron * 5), fullMark: 100 }
-        ])
-        
-        setAiAnalysis('')
-        if (data.length > 0) {
-          setTimeout(() => {
-            runAiAnalysis(token, selectedDate)
-          }, 100)
-        }
-      }
-    } catch (err) {
-      triggerAlert('error', 'Failed to retrieve meal details')
+    setMicroData([
+      { subject: 'Vit C (mg)', A: Math.round(micros.vitamin_c), fullMark: 100 },
+      { subject: 'Vit D (mcg)', A: Math.round(micros.vitamin_d * 5), fullMark: 100 },
+      { subject: 'Vit A (mcg/10)', A: Math.round(micros.vitamin_a / 10), fullMark: 100 },
+      { subject: 'Calcium (mg/10)', A: Math.round(micros.calcium / 10), fullMark: 100 },
+      { subject: 'Iron (mg)', A: Math.round(micros.iron * 5), fullMark: 100 }
+    ])
+    
+    setAiAnalysis('')
+    if (dayMeals.length > 0) {
+      setTimeout(() => {
+        runAiAnalysis(selectedDate)
+      }, 100)
     }
   }
 
   const saveMeal = async (type) => {
     if (!meals[type] || !meals[type].trim()) return
+    const foodName = meals[type]
     setSaveStates(prev => ({ ...prev, [type]: 'saving' }))
+    
+    let nutrients = {
+      calories: 150.0,
+      protein: 5.0,
+      carbs: 20.0,
+      fat: 5.0,
+      vitamin_c: 10.0,
+      vitamin_d: 1.0,
+      vitamin_a: 50.0,
+      calcium: 20.0,
+      iron: 1.0
+    }
+
+    const key = settings.openrouter_key
+    const model = settings.openrouter_model
+
+    if (key && foodName.trim()) {
+      try {
+        const prompt = `Analyze nutrients for a portion of: ${foodName}. Return strictly valid JSON object with keys: calories (kcal), protein (g), carbs (g), fat (g), vitamin_c (mg), vitamin_d (mcg), vitamin_a (mcg), calcium (mg), iron (mg). No markdown, no comments, no extra text.`
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [{ role: "user", content: prompt }]
+          })
+        })
+        if (res.ok) {
+          const data = await res.json()
+          let content = data.choices[0].message.content.strip ? data.choices[0].message.content.strip() : data.choices[0].message.content.trim()
+          if (content.includes("```json")) {
+            content = content.split("```json")[1].split("```")[0].trim()
+          } else if (content.includes("```")) {
+            content = content.split("```")[1].split("```")[0].trim()
+          }
+          const parsed = JSON.parse(content)
+          Object.keys(nutrients).forEach(k => {
+            if (k in parsed) {
+              nutrients[k] = parseFloat(parsed[k])
+            }
+          })
+        }
+      } catch (e) {
+        console.error("OpenRouter analysis error", e)
+      }
+    }
+
+    const db = getLocalDb()
+    const newMeal = {
+      id: Date.now(),
+      date: selectedDate,
+      meal_type: type,
+      food_name: foodName,
+      ...nutrients
+    }
+    db.push(newMeal)
+    saveLocalDb(db)
+
+    triggerAlert('success', `Saved ${type} successfully!`)
+    setMeals(prev => ({ ...prev, [type]: '' }))
+    loadDayData()
+    setSaveStates(prev => ({ ...prev, [type]: 'saved' }))
+    setTimeout(() => {
+      setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
+    }, 1500)
+  }
+
+  const runAiAnalysis = async (customDate) => {
+    const activeDate = customDate || selectedDate
+    const db = getLocalDb()
+    const dayMeals = db.filter(m => m.date === activeDate)
+    
+    if (dayMeals.length === 0) {
+      setAiAnalysis("No meals logged for today yet. Add meals to see analysis.")
+      return
+    }
+
+    const key = settings.openrouter_key
+    const model = settings.openrouter_model
+
+    if (!key) {
+      setAiAnalysis("Please configure your OpenRouter API Key in settings to get detailed AI feedback.")
+      return
+    }
+
+    setLoadingAi(true)
+
+    const mealsSummary = dayMeals.map(m => `${m.meal_type}: ${m.food_name}`).join('\n')
+    let totalNutrients = {
+      calories: 0, protein: 0, carbs: 0, fat: 0,
+      vitamin_c: 0, vitamin_d: 0, vitamin_a: 0, calcium: 0, iron: 0
+    }
+    dayMeals.forEach(m => {
+      Object.keys(totalNutrients).forEach(k => {
+        totalNutrients[k] += m[k] || 0
+      })
+    })
+
+    const weaknessInstruction = settings.user_weakness ? `\nTake into account that the user has the following health conditions/weaknesses: ${settings.user_weakness}. Structure recommendations to specifically address and mitigate these issues.` : ""
+    
+    const prompt = `Today is ${activeDate}. Here is my food intake for today:
+${mealsSummary}
+
+Calculated nutrient totals:
+${JSON.stringify(totalNutrients, null, 2)}
+
+Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point out what was missed, if I lack vitamins or minerals, and give constructive suggestions. Suggestions must be strictly vegetarian and tailored to Indian/Gujarati cuisine. Keep your response bulleted, concise and action-oriented.${weaknessInstruction}`
+
     try {
-      const res = await fetch('/api/meals', {
-        method: 'POST',
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          date: selectedDate,
-          meal_type: type,
-          food_name: meals[type]
+          model: model,
+          messages: [{ role: "user", content: prompt }]
         })
       })
       if (res.ok) {
-        triggerAlert('success', `Saved ${type} successfully!`)
-        setMeals(prev => ({ ...prev, [type]: '' }))
-        loadDayData()
-        setTimeout(() => {
-          loadDayData()
-        }, 3000)
-        setSaveStates(prev => ({ ...prev, [type]: 'saved' }))
-        setTimeout(() => {
-          setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
-        }, 1500)
-      } else {
-        triggerAlert('error', 'Could not save meal')
-        setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
-      }
-    } catch (err) {
-      triggerAlert('error', 'Network error while saving')
-      setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
-    }
-  }
-
-  const runAiAnalysis = async (customToken, customDate) => {
-    const activeToken = customToken || token
-    const activeDate = customDate || selectedDate
-    if (!activeToken) return
-    setLoadingAi(true)
-    try {
-      const res = await fetch(`/api/analyze?date=${activeDate}`, {
-        headers: { 'Authorization': `Bearer ${activeToken}` }
-      })
-      if (res.ok) {
         const data = await res.json()
-        setAiAnalysis(data.analysis)
+        setAiAnalysis(data.choices[0].message.content)
       } else {
         setAiAnalysis('Analysis service unavailable')
       }
@@ -234,45 +304,68 @@ export default function App() {
     }
   }
 
-  const openSettingsModal = async () => {
-    try {
-      const res = await fetch('/api/settings', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setSettings(data)
-        setShowSettings(true)
-      }
-    } catch (err) {
-      triggerAlert('error', 'Could not retrieve settings')
-    }
-  }
-
-  const saveSettingsModal = async (e) => {
-    e.preventDefault()
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(settings)
-      })
-      if (res.ok) {
-        setShowSettings(false)
-        triggerAlert('success', 'Configuration updated')
-        if (role === 'user' && settings.user_password !== token) {
-          localStorage.setItem('app_token', settings.user_password)
-          setToken(settings.user_password)
-        } else if (role === 'admin' && settings.admin_password !== token) {
-          localStorage.setItem('app_token', settings.admin_password)
-          setToken(settings.admin_password)
+  const loadAdminReport = () => {
+    const db = getLocalDb()
+    const report = {}
+    db.forEach(r => {
+      const dateStr = r.date
+      if (!report[dateStr]) {
+        report[dateStr] = {
+          date: dateStr,
+          meals: [],
+          calories: 0.0,
+          protein: 0.0,
+          carbs: 0.0,
+          fat: 0.0,
+          vitamin_c: 0.0,
+          vitamin_d: 0.0,
+          vitamin_a: 0.0,
+          calcium: 0.0,
+          iron: 0.0
         }
       }
-    } catch (err) {
-      triggerAlert('error', 'Failed to update settings')
+      const day = report[dateStr]
+      day.meals.push(`${r.meal_type.toUpperCase()}: ${r.food_name}`)
+      day.calories += r.calories || 0.0
+      day.protein += r.protein || 0.0
+      day.carbs += r.carbs || 0.0
+      day.fat += r.fat || 0.0
+      day.vitamin_c += r.vitamin_c || 0.0
+      day.vitamin_d += r.vitamin_d || 0.0
+      day.vitamin_a += r.vitamin_a || 0.0
+      day.calcium += r.calcium || 0.0
+      day.iron += r.iron || 0.0
+    })
+
+    const finalReport = Object.values(report).map(day => {
+      const lacking = []
+      if (day.calories < 2000) lacking.push("Calories")
+      if (day.protein < 50) lacking.push("Protein")
+      if (day.vitamin_c < 90) lacking.push("Vitamin C")
+      if (day.vitamin_d < 15) lacking.push("Vitamin D")
+      if (day.vitamin_a < 900) lacking.push("Vitamin A")
+      if (day.calcium < 1000) lacking.push("Calcium")
+      if (day.iron < 18) lacking.push("Iron")
+      return { ...day, lacking }
+    })
+
+    setAdminReport(finalReport.sort((a, b) => b.date.localeCompare(a.date)))
+  }
+
+  const openSettingsModal = () => {
+    setShowSettings(true)
+  }
+
+  const saveSettingsModal = (e) => {
+    e.preventDefault()
+    setShowSettings(false)
+    triggerAlert('success', 'Configuration updated')
+    if (role === 'user' && settings.user_password !== token) {
+      localStorage.setItem('app_token', settings.user_password)
+      setToken(settings.user_password)
+    } else if (role === 'admin' && settings.admin_password !== token) {
+      localStorage.setItem('app_token', settings.admin_password)
+      setToken(settings.admin_password)
     }
   }
 
@@ -624,7 +717,7 @@ export default function App() {
               <button 
                 className="glow-button" 
                 style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem' }} 
-                onClick={runAiAnalysis}
+                onClick={() => runAiAnalysis(selectedDate)}
                 disabled={loadingAi}
               >
                 {loadingAi ? <div className="loading-spinner"></div> : <span>Analyze Day</span>}
@@ -678,16 +771,6 @@ export default function App() {
                   value={settings.openrouter_model}
                   onChange={(e) => setSettings({ ...settings, openrouter_model: e.target.value })}
                   placeholder="google/gemini-2.5-flash"
-                />
-              </div>
-              <div className="input-group">
-                <label className="input-label">Health Conditions / Weaknesses</label>
-                <input 
-                  type="text" 
-                  className="glass-input" 
-                  value={settings.user_weakness || ''}
-                  onChange={(e) => setSettings({ ...settings, user_weakness: e.target.value })}
-                  placeholder="e.g. Iron deficiency, low energy, lactose intolerant"
                 />
               </div>
               <div className="input-group">

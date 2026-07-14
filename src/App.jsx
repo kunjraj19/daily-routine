@@ -85,6 +85,36 @@ export default function App() {
     return createClient(url, key)
   }
 
+  const loadSupabaseSettings = async (supabase) => {
+    if (!supabase) return
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+      if (!error && data) {
+        const updates = {}
+        data.forEach(row => {
+          if (row.key === 'openrouter_key') updates.openrouter_key = row.value
+          if (row.key === 'openrouter_model') updates.openrouter_model = row.value
+        })
+        if (Object.keys(updates).length > 0) {
+          setSettings(prev => ({ ...prev, ...updates }))
+        }
+      }
+    } catch (err) {
+      console.error("Error loading Supabase settings", err)
+    }
+  }
+
+  useEffect(() => {
+    if (token) {
+      const supabase = getSupabase()
+      if (supabase) {
+        loadSupabaseSettings(supabase)
+      }
+    }
+  }, [token])
+
   useEffect(() => {
     if (token && role === 'user') {
       loadDayData()

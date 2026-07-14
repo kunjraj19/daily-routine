@@ -8,6 +8,14 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar 
 } from 'recharts'
 
+const sha256 = async (string) => {
+  const utf8 = new TextEncoder().encode(string)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', utf8)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const hashHex = hashArray.map((bytes) => bytes.toString(16).padStart(2, '0')).join('')
+  return hashHex
+}
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('app_token') || '')
   const [role, setRole] = useState(localStorage.getItem('app_role') || '')
@@ -47,10 +55,6 @@ export default function App() {
   const [loadingAi, setLoadingAi] = useState(false)
   const [adminReport, setAdminReport] = useState([])
   
-  const [setupUserPass, setSetupUserPass] = useState('')
-  const [setupAdminPass, setSetupAdminPass] = useState('')
-  const [setupKey, setSetupKey] = useState('')
-
   const [settings, setSettings] = useState({
     openrouter_key: localStorage.getItem('openrouter_key') || '',
     openrouter_model: localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash',
@@ -60,8 +64,8 @@ export default function App() {
   })
 
   useEffect(() => {
-    if (settings.user_password) localStorage.setItem('user_password', settings.user_password)
-    if (settings.admin_password) localStorage.setItem('admin_password', settings.admin_password)
+    localStorage.setItem('user_password', settings.user_password)
+    localStorage.setItem('admin_password', settings.admin_password)
     localStorage.setItem('openrouter_key', settings.openrouter_key)
     localStorage.setItem('openrouter_model', settings.openrouter_model)
     localStorage.setItem('user_weakness', settings.user_weakness)
@@ -93,15 +97,38 @@ export default function App() {
     localStorage.setItem('meals_db', JSON.stringify(db))
   }
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
-    if (password && password === settings.user_password) {
+    if (!password) return
+    const enteredHash = await sha256(password)
+    const defaultUserHash = 'fcf730b6d95236ecd3c9fc2d92d7b6b2bb061514961aec041d6c7a7192f592e4'
+    const defaultAdminHash = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'
+    
+    const customUserPass = settings.user_password
+    const customAdminPass = settings.admin_password
+
+    let isUser = false
+    let isAdmin = false
+
+    if (customUserPass) {
+      isUser = (password === customUserPass)
+    } else {
+      isUser = (enteredHash === defaultUserHash)
+    }
+
+    if (customAdminPass) {
+      isAdmin = (password === customAdminPass)
+    } else {
+      isAdmin = (enteredHash === defaultAdminHash)
+    }
+
+    if (isUser) {
       localStorage.setItem('app_token', password)
       localStorage.setItem('app_role', 'user')
       setToken(password)
       setRole('user')
       setLoginError('')
-    } else if (password && password === settings.admin_password) {
+    } else if (isAdmin) {
       localStorage.setItem('app_token', password)
       localStorage.setItem('app_role', 'admin')
       setToken(password)
@@ -110,30 +137,6 @@ export default function App() {
     } else {
       setLoginError('Invalid credentials')
     }
-  }
-
-  const handleSetup = (e) => {
-    e.preventDefault()
-    if (!setupUserPass.trim() || !setupAdminPass.trim()) {
-      setLoginError('Passwords are required')
-      return
-    }
-    setSettings({
-      openrouter_key: setupKey,
-      openrouter_model: 'google/gemini-2.5-flash',
-      user_password: setupUserPass,
-      admin_password: setupAdminPass,
-      user_weakness: ''
-    })
-    localStorage.setItem('user_password', setupUserPass)
-    localStorage.setItem('admin_password', setupAdminPass)
-    localStorage.setItem('openrouter_key', setupKey)
-    localStorage.setItem('app_token', setupUserPass)
-    localStorage.setItem('app_role', 'user')
-    setToken(setupUserPass)
-    setRole('user')
-    setLoginError('')
-    triggerAlert('success', 'Credentials set successfully!')
   }
 
   const handleLogout = () => {
@@ -415,61 +418,6 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
     dinner: <Moon className="w-5 h-5" />,
     snack: <Candy className="w-5 h-5" />,
     juice: <CupSoda className="w-5 h-5" />
-  }
-
-  if (!settings.user_password || !settings.admin_password) {
-    return (
-      <div className="login-wrapper">
-        <div className="glass-card login-card" style={{ maxWidth: '480px' }}>
-          <form className="login-content" onSubmit={handleSetup}>
-            <div className="title-glow">Initial Setup</div>
-            <div className="subtitle">Configure your local security credentials</div>
-            {loginError && (
-              <div className="alert-message error">
-                <AlertCircle className="w-4 h-4" />
-                <span>{loginError}</span>
-              </div>
-            )}
-            <div className="input-group">
-              <label className="input-label">User Password</label>
-              <input 
-                type="password" 
-                className="glass-input" 
-                value={setupUserPass}
-                onChange={(e) => setSetupUserPass(e.target.value)}
-                placeholder="Set user password"
-                required
-              />
-            </div>
-            <div className="input-group">
-              <label className="input-label">Admin Password</label>
-              <input 
-                type="password" 
-                className="glass-input" 
-                value={setupAdminPass}
-                onChange={(e) => setSetupAdminPass(e.target.value)}
-                placeholder="Set admin password"
-                required
-              />
-            </div>
-            <div className="input-group">
-              <label className="input-label">OpenRouter API Key (Optional)</label>
-              <input 
-                type="password" 
-                className="glass-input" 
-                value={setupKey}
-                onChange={(e) => setSetupKey(e.target.value)}
-                placeholder="sk-or-..."
-              />
-            </div>
-            <button type="submit" className="glow-button">
-              <Sparkles className="w-4 h-4" />
-              <span>Initialize Dashboard</span>
-            </button>
-          </form>
-        </div>
-      </div>
-    )
   }
 
   if (!token) {

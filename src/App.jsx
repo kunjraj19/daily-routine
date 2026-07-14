@@ -101,8 +101,8 @@ export default function App() {
     e.preventDefault()
     if (!password) return
     const enteredHash = await sha256(password)
-    const defaultUserHash = 'fcf730b6d95236ecd3c9fc2d92d7b6b2bb061514961aec041d6c7a7192f592e4'
-    const defaultAdminHash = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'
+    const defaultUserHash = '734a50d580ecbde812d24bf5c17158861df0a70ad0c5718abdd79324e14f1025'
+    const defaultAdminHash = '594fa62c44abdf558688108c75141450c625fd9f72185f4248208ea98a92064b'
     
     const customUserPass = settings.user_password
     const customAdminPass = settings.admin_password

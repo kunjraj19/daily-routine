@@ -139,6 +139,13 @@ export default function App() {
     }
   }
 
+  const handleResetApp = () => {
+    if (window.confirm("This will reset all data and passwords to defaults. Continue?")) {
+      localStorage.clear()
+      window.location.reload()
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('app_token')
     localStorage.removeItem('app_role')
@@ -450,6 +457,23 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
               <Lock className="w-4 h-4" />
               <span>Unlock Dashboard</span>
             </button>
+            <div style={{ textAlign: 'center', marginTop: '1.2rem' }}>
+              <button 
+                type="button" 
+                onClick={handleResetApp} 
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.75rem',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  opacity: 0.6
+                }}
+              >
+                Reset App Database & Passwords
+              </button>
+            </div>
           </form>
         </div>
       </div>

@@ -225,7 +225,7 @@ export default function App() {
 
     dayMeals.forEach(m => {
       if (m.meal_type in newLoggedMeals) {
-        newLoggedMeals[m.meal_type].push(m.food_name)
+        newLoggedMeals[m.meal_type].push({ id: m.id, name: m.food_name })
       }
       macros.calories += m.calories || 0
       macros.protein += m.protein || 0
@@ -475,7 +475,7 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
         }
       }
       const day = report[dateStr]
-      day.meals.push(`${r.meal_type.toUpperCase()}: ${r.food_name}`)
+      day.meals.push({ id: r.id, display: `${r.meal_type.toUpperCase()}: ${r.food_name}` })
       day.calories += r.calories || 0.0
       day.protein += r.protein || 0.0
       day.carbs += r.carbs || 0.0
@@ -541,6 +541,32 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
         loadAdminReport()
       }
       setShowSettings(false)
+    }
+  }
+
+  const deleteMeal = async (mealId) => {
+    if (window.confirm("Are you sure you want to delete this meal record?")) {
+      const supabase = getSupabase()
+      if (supabase) {
+        try {
+          await supabase
+            .from('meals')
+            .delete()
+            .eq('id', mealId)
+            .eq('sports', 'nutrition')
+        } catch (err) {
+          console.error("Supabase delete error", err)
+        }
+      } else {
+        const db = getLocalDb()
+        const filtered = db.filter(m => m.id !== mealId)
+        saveLocalDb(filtered)
+      }
+      triggerAlert('success', 'Meal deleted successfully!')
+      loadDayData()
+      if (role === 'admin') {
+        loadAdminReport()
+      }
     }
   }
 
@@ -697,7 +723,23 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                       <td style={{ padding: '1rem', maxWidth: '300px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                           {day.meals.map((meal, mIdx) => (
-                            <span key={mIdx} style={{ fontSize: '0.9rem' }}>{meal}</span>
+                            <div key={mIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem', gap: '0.5rem' }}>
+                              <span>{meal.display}</span>
+                              <button 
+                                onClick={() => deleteMeal(meal.id)} 
+                                style={{ 
+                                  background: 'none', 
+                                  color: '#fca5a5', 
+                                  cursor: 'pointer', 
+                                  fontSize: '0.72rem',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid rgba(239, 68, 68, 0.2)'
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </td>
@@ -935,9 +977,28 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                           padding: '0.3rem 0.7rem',
                           borderRadius: '8px',
                           fontSize: '0.85rem',
-                          color: 'var(--text-secondary)'
+                          color: 'var(--text-secondary)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem'
                         }}>
-                          {item}
+                          <span>{item.name}</span>
+                          <button 
+                            onClick={() => deleteMeal(item.id)} 
+                            style={{ 
+                              background: 'none', 
+                              border: 'none', 
+                              color: '#fca5a5', 
+                              cursor: 'pointer', 
+                              fontSize: '0.9rem',
+                              padding: '0 2px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              lineHeight: '1'
+                            }}
+                          >
+                            ×
+                          </button>
                         </span>
                       ))}
                     </div>

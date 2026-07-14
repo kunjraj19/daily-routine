@@ -88,6 +88,9 @@ export default function App() {
   const loadSupabaseSettings = async (supabase) => {
     if (!supabase) return
     try {
+      if (!supabase.auth.getSession || !(await supabase.auth.getSession()).data.session) {
+        await supabase.auth.signInAnonymously()
+      }
       const { data, error } = await supabase
         .from('settings')
         .select('*')
@@ -284,42 +287,9 @@ export default function App() {
     const key = settings.openrouter_key
     const model = settings.openrouter_model
 
-    if (key && foodName.trim()) {
-      try {
-        const prompt = `Analyze nutrients for a portion of: ${foodName}. Return strictly valid JSON object with keys: calories (kcal), protein (g), carbs (g), fat (g), vitamin_c (mg), vitamin_d (mcg), vitamin_a (mcg), calcium (mg), iron (mg). No markdown, no comments, no extra text.`
-        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${key}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [{ role: "user", content: prompt }]
-          })
-        })
-        if (res.ok) {
-          const data = await res.json()
-          let content = data.choices[0].message.content.strip ? data.choices[0].message.content.strip() : data.choices[0].message.content.trim()
-          if (content.includes("```json")) {
-            content = content.split("```json")[1].split("```")[0].trim()
-          } else if (content.includes("```")) {
-            content = content.split("```")[1].split("```")[0].trim()
-          }
-          const parsed = JSON.parse(content)
-          Object.keys(nutrients).forEach(k => {
-            if (k in parsed) {
-              nutrients[k] = parseFloat(parsed[k])
-            }
-          })
-        }
-      } catch (e) {
-        console.error("OpenRouter analysis error", e)
-      }
-    }
-
+    const tempId = Date.now()
     const newMeal = {
-      id: Date.now(),
+      id: tempId,
       date: selectedDate,
       meal_type: type,
       food_name: foodName,
@@ -327,29 +297,87 @@ export default function App() {
       sports: 'nutrition'
     }
 
-    const supabase = getSupabase()
-    if (supabase) {
-      try {
-        const { id, ...supabaseMeal } = newMeal
-        await supabase
-          .from('meals')
-          .insert([supabaseMeal])
-      } catch (err) {
-        console.error("Supabase insert error", err)
-      }
-    } else {
-      const db = getLocalDb()
-      db.push(newMeal)
-      saveLocalDb(db)
-    }
-
     triggerAlert('success', `Saved ${type} successfully!`)
     setMeals(prev => ({ ...prev, [type]: '' }))
-    loadDayData()
     setSaveStates(prev => ({ ...prev, [type]: 'saved' }))
     setTimeout(() => {
       setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
     }, 1500)
+
+    (async () => {
+      let insertedId = tempId
+      const supabase = getSupabase()
+      if (supabase) {
+        try {
+          const { id, ...supabaseMeal } = newMeal
+          const { data, error } = await supabase
+            .from('meals')
+            .insert([supabaseMeal])
+            .select()
+          if (!error && data && data.length > 0) {
+            insertedId = data[0].id
+          }
+        } catch (err) {
+          console.error("Supabase insert error", err)
+        }
+      } else {
+        const db = getLocalDb()
+        db.push(newMeal)
+        saveLocalDb(db)
+      }
+
+      loadDayData()
+
+      if (key && foodName.trim()) {
+        try {
+          const prompt = `Analyze nutrients for a portion of: ${foodName}. Return strictly valid JSON object with keys: calories (kcal), protein (g), carbs (g), fat (g), vitamin_c (mg), vitamin_d (mcg), vitamin_a (mcg), calcium (mg), iron (mg). No markdown, no comments, no extra text.`
+          const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${key}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: "user", content: prompt }]
+            })
+          })
+          if (res.ok) {
+            const data = await res.json()
+            let content = data.choices[0].message.content.strip ? data.choices[0].message.content.strip() : data.choices[0].message.content.trim()
+            if (content.includes("```json")) {
+              content = content.split("```json")[1].split("```")[0].trim()
+            } else if (content.includes("```")) {
+              content = content.split("```")[1].split("```")[0].trim()
+            }
+            const parsed = JSON.parse(content)
+            const updatedNutrients = {}
+            Object.keys(nutrients).forEach(k => {
+              if (k in parsed) {
+                updatedNutrients[k] = parseFloat(parsed[k])
+              }
+            })
+            if (Object.keys(updatedNutrients).length > 0) {
+              const supabaseClient = getSupabase()
+              if (supabaseClient) {
+                await supabaseClient
+                  .from('meals')
+                  .update(updatedNutrients)
+                  .eq('id', insertedId)
+                  .eq('sports', 'nutrition')
+              } else {
+                const db = getLocalDb()
+                const updatedDb = db.map(m => m.id === insertedId ? { ...m, ...updatedNutrients } : m)
+                saveLocalDb(updatedDb)
+              }
+              loadDayData()
+            }
+          }
+        } catch (e) {
+          console.error("OpenRouter analysis error", e)
+        }
+      }
+    })()
   }
 
   const runAiAnalysis = async (customDate) => {
@@ -983,22 +1011,24 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                           gap: '0.4rem'
                         }}>
                           <span>{item.name}</span>
-                          <button 
-                            onClick={() => deleteMeal(item.id)} 
-                            style={{ 
-                              background: 'none', 
-                              border: 'none', 
-                              color: '#fca5a5', 
-                              cursor: 'pointer', 
-                              fontSize: '0.9rem',
-                              padding: '0 2px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              lineHeight: '1'
-                            }}
-                          >
-                            ×
-                          </button>
+                          {role === 'admin' && (
+                            <button 
+                              onClick={() => deleteMeal(item.id)} 
+                              style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                color: '#fca5a5', 
+                                cursor: 'pointer', 
+                                fontSize: '0.9rem',
+                                padding: '0 2px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                lineHeight: '1'
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
                         </span>
                       ))}
                     </div>

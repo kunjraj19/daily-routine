@@ -47,17 +47,21 @@ export default function App() {
   const [loadingAi, setLoadingAi] = useState(false)
   const [adminReport, setAdminReport] = useState([])
   
+  const [setupUserPass, setSetupUserPass] = useState('')
+  const [setupAdminPass, setSetupAdminPass] = useState('')
+  const [setupKey, setSetupKey] = useState('')
+
   const [settings, setSettings] = useState({
-    openrouter_key: import.meta.env.VITE_OPENROUTER_API_KEY || localStorage.getItem('openrouter_key') || '',
-    openrouter_model: import.meta.env.VITE_OPENROUTER_MODEL || localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash',
-    user_password: import.meta.env.VITE_USER_PASSWORD || localStorage.getItem('user_password') || 'secret123',
-    admin_password: import.meta.env.VITE_ADMIN_PASSWORD || localStorage.getItem('admin_password') || 'admin123',
+    openrouter_key: localStorage.getItem('openrouter_key') || '',
+    openrouter_model: localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash',
+    user_password: localStorage.getItem('user_password') || '',
+    admin_password: localStorage.getItem('admin_password') || '',
     user_weakness: localStorage.getItem('user_weakness') || ''
   })
 
   useEffect(() => {
-    localStorage.setItem('user_password', settings.user_password)
-    localStorage.setItem('admin_password', settings.admin_password)
+    if (settings.user_password) localStorage.setItem('user_password', settings.user_password)
+    if (settings.admin_password) localStorage.setItem('admin_password', settings.admin_password)
     localStorage.setItem('openrouter_key', settings.openrouter_key)
     localStorage.setItem('openrouter_model', settings.openrouter_model)
     localStorage.setItem('user_weakness', settings.user_weakness)
@@ -91,13 +95,13 @@ export default function App() {
 
   const handleLogin = (e) => {
     e.preventDefault()
-    if (password === settings.user_password) {
+    if (password && password === settings.user_password) {
       localStorage.setItem('app_token', password)
       localStorage.setItem('app_role', 'user')
       setToken(password)
       setRole('user')
       setLoginError('')
-    } else if (password === settings.admin_password) {
+    } else if (password && password === settings.admin_password) {
       localStorage.setItem('app_token', password)
       localStorage.setItem('app_role', 'admin')
       setToken(password)
@@ -106,6 +110,30 @@ export default function App() {
     } else {
       setLoginError('Invalid credentials')
     }
+  }
+
+  const handleSetup = (e) => {
+    e.preventDefault()
+    if (!setupUserPass.trim() || !setupAdminPass.trim()) {
+      setLoginError('Passwords are required')
+      return
+    }
+    setSettings({
+      openrouter_key: setupKey,
+      openrouter_model: 'google/gemini-2.5-flash',
+      user_password: setupUserPass,
+      admin_password: setupAdminPass,
+      user_weakness: ''
+    })
+    localStorage.setItem('user_password', setupUserPass)
+    localStorage.setItem('admin_password', setupAdminPass)
+    localStorage.setItem('openrouter_key', setupKey)
+    localStorage.setItem('app_token', setupUserPass)
+    localStorage.setItem('app_role', 'user')
+    setToken(setupUserPass)
+    setRole('user')
+    setLoginError('')
+    triggerAlert('success', 'Credentials set successfully!')
   }
 
   const handleLogout = () => {
@@ -387,6 +415,61 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
     dinner: <Moon className="w-5 h-5" />,
     snack: <Candy className="w-5 h-5" />,
     juice: <CupSoda className="w-5 h-5" />
+  }
+
+  if (!settings.user_password || !settings.admin_password) {
+    return (
+      <div className="login-wrapper">
+        <div className="glass-card login-card" style={{ maxWidth: '480px' }}>
+          <form className="login-content" onSubmit={handleSetup}>
+            <div className="title-glow">Initial Setup</div>
+            <div className="subtitle">Configure your local security credentials</div>
+            {loginError && (
+              <div className="alert-message error">
+                <AlertCircle className="w-4 h-4" />
+                <span>{loginError}</span>
+              </div>
+            )}
+            <div className="input-group">
+              <label className="input-label">User Password</label>
+              <input 
+                type="password" 
+                className="glass-input" 
+                value={setupUserPass}
+                onChange={(e) => setSetupUserPass(e.target.value)}
+                placeholder="Set user password"
+                required
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Admin Password</label>
+              <input 
+                type="password" 
+                className="glass-input" 
+                value={setupAdminPass}
+                onChange={(e) => setSetupAdminPass(e.target.value)}
+                placeholder="Set admin password"
+                required
+              />
+            </div>
+            <div className="input-group">
+              <label className="input-label">OpenRouter API Key (Optional)</label>
+              <input 
+                type="password" 
+                className="glass-input" 
+                value={setupKey}
+                onChange={(e) => setSetupKey(e.target.value)}
+                placeholder="sk-or-..."
+              />
+            </div>
+            <button type="submit" className="glow-button">
+              <Sparkles className="w-4 h-4" />
+              <span>Initialize Dashboard</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   if (!token) {

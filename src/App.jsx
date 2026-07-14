@@ -1,0 +1,725 @@
+import React, { useState, useEffect } from 'react'
+import { 
+  Lock, LogOut, Settings, Save, AlertCircle, Sparkles, CheckCircle2, 
+  Coffee, Utensils, Moon, Candy, CupSoda, Calendar
+} from 'lucide-react'
+import { 
+  ResponsiveContainer, BarChart, Bar, Cell, XAxis, YAxis, Tooltip, 
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar 
+} from 'recharts'
+
+export default function App() {
+  const [token, setToken] = useState(localStorage.getItem('app_token') || '')
+  const [role, setRole] = useState(localStorage.getItem('app_role') || '')
+  const [password, setPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [showSettings, setShowSettings] = useState(false)
+  const [alert, setAlert] = useState(null)
+  
+  const [meals, setMeals] = useState({
+    breakfast: '',
+    lunch: '',
+    dinner: '',
+    snack: '',
+    juice: ''
+  })
+  const [loggedMeals, setLoggedMeals] = useState({
+    breakfast: [],
+    lunch: [],
+    dinner: [],
+    snack: [],
+    juice: []
+  })
+  const [saveStates, setSaveStates] = useState({
+    breakfast: 'idle',
+    lunch: 'idle',
+    dinner: 'idle',
+    snack: 'idle',
+    juice: 'idle'
+  })
+  
+  const [nutrientData, setNutrientData] = useState([])
+  const [microData, setMicroData] = useState([])
+  const [aiAnalysis, setAiAnalysis] = useState('')
+  const [loadingAi, setLoadingAi] = useState(false)
+  const [adminReport, setAdminReport] = useState([])
+  
+  const [settings, setSettings] = useState({
+    openrouter_key: '',
+    openrouter_model: '',
+    user_password: '',
+    admin_password: '',
+    user_weakness: ''
+  })
+
+  useEffect(() => {
+    if (token && role === 'user') {
+      loadDayData()
+    }
+  }, [token, selectedDate, role])
+
+  useEffect(() => {
+    if (token && role === 'admin') {
+      loadAdminReport()
+    }
+  }, [token, role])
+
+  const triggerAlert = (type, message) => {
+    setAlert({ type, message })
+    setTimeout(() => setAlert(null), 4000)
+  }
+
+  const loadAdminReport = async () => {
+    try {
+      const res = await fetch('/api/admin/report', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAdminReport(data)
+      }
+    } catch (err) {
+      triggerAlert('error', 'Failed to retrieve admin report')
+    }
+  }
+
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        localStorage.setItem('app_token', data.token)
+        localStorage.setItem('app_role', data.role)
+        setToken(data.token)
+        setRole(data.role)
+        setLoginError('')
+      } else {
+        setLoginError('Invalid credentials')
+      }
+    } catch (err) {
+      setLoginError('Server error')
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('app_token')
+    localStorage.removeItem('app_role')
+    setToken('')
+    setRole('')
+  }
+
+  const loadDayData = async () => {
+    try {
+      const res = await fetch(`/api/meals?date=${selectedDate}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.status === 401) {
+        handleLogout()
+        return
+      }
+      if (res.ok) {
+        const data = await res.json()
+        const newLoggedMeals = { breakfast: [], lunch: [], dinner: [], snack: [], juice: [] }
+        
+        let macros = { calories: 0, protein: 0, carbs: 0, fat: 0 }
+        let micros = { vitamin_c: 0, vitamin_d: 0, vitamin_a: 0, calcium: 0, iron: 0 }
+
+        data.forEach(m => {
+          if (m.meal_type in newLoggedMeals) {
+            newLoggedMeals[m.meal_type].push(m.food_name)
+          }
+          macros.calories += m.calories || 0
+          macros.protein += m.protein || 0
+          macros.carbs += m.carbs || 0
+          macros.fat += m.fat || 0
+
+          micros.vitamin_c += m.vitamin_c || 0
+          micros.vitamin_d += m.vitamin_d || 0
+          micros.vitamin_a += m.vitamin_a || 0
+          micros.calcium += m.calcium || 0
+          micros.iron += m.iron || 0
+        })
+
+        setLoggedMeals(newLoggedMeals)
+        
+        setNutrientData([
+          { name: 'Calories (kcal/10)', value: Math.round(macros.calories / 10) },
+          { name: 'Protein (g)', value: Math.round(macros.protein) },
+          { name: 'Carbs (g)', value: Math.round(macros.carbs) },
+          { name: 'Fat (g)', value: Math.round(macros.fat) }
+        ])
+
+        setMicroData([
+          { subject: 'Vit C (mg)', A: Math.round(micros.vitamin_c), fullMark: 100 },
+          { subject: 'Vit D (mcg)', A: Math.round(micros.vitamin_d * 5), fullMark: 100 },
+          { subject: 'Vit A (mcg/10)', A: Math.round(micros.vitamin_a / 10), fullMark: 100 },
+          { subject: 'Calcium (mg/10)', A: Math.round(micros.calcium / 10), fullMark: 100 },
+          { subject: 'Iron (mg)', A: Math.round(micros.iron * 5), fullMark: 100 }
+        ])
+        
+        setAiAnalysis('')
+        if (data.length > 0) {
+          setTimeout(() => {
+            runAiAnalysis(token, selectedDate)
+          }, 100)
+        }
+      }
+    } catch (err) {
+      triggerAlert('error', 'Failed to retrieve meal details')
+    }
+  }
+
+  const saveMeal = async (type) => {
+    if (!meals[type] || !meals[type].trim()) return
+    setSaveStates(prev => ({ ...prev, [type]: 'saving' }))
+    try {
+      const res = await fetch('/api/meals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          date: selectedDate,
+          meal_type: type,
+          food_name: meals[type]
+        })
+      })
+      if (res.ok) {
+        triggerAlert('success', `Saved ${type} successfully!`)
+        setMeals(prev => ({ ...prev, [type]: '' }))
+        loadDayData()
+        setTimeout(() => {
+          loadDayData()
+        }, 3000)
+        setSaveStates(prev => ({ ...prev, [type]: 'saved' }))
+        setTimeout(() => {
+          setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
+        }, 1500)
+      } else {
+        triggerAlert('error', 'Could not save meal')
+        setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
+      }
+    } catch (err) {
+      triggerAlert('error', 'Network error while saving')
+      setSaveStates(prev => ({ ...prev, [type]: 'idle' }))
+    }
+  }
+
+  const runAiAnalysis = async (customToken, customDate) => {
+    const activeToken = customToken || token
+    const activeDate = customDate || selectedDate
+    if (!activeToken) return
+    setLoadingAi(true)
+    try {
+      const res = await fetch(`/api/analyze?date=${activeDate}`, {
+        headers: { 'Authorization': `Bearer ${activeToken}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setAiAnalysis(data.analysis)
+      } else {
+        setAiAnalysis('Analysis service unavailable')
+      }
+    } catch (err) {
+      setAiAnalysis('Network error requesting AI feedback')
+    } finally {
+      setLoadingAi(false)
+    }
+  }
+
+  const openSettingsModal = async () => {
+    try {
+      const res = await fetch('/api/settings', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setSettings(data)
+        setShowSettings(true)
+      }
+    } catch (err) {
+      triggerAlert('error', 'Could not retrieve settings')
+    }
+  }
+
+  const saveSettingsModal = async (e) => {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(settings)
+      })
+      if (res.ok) {
+        setShowSettings(false)
+        triggerAlert('success', 'Configuration updated')
+        if (role === 'user' && settings.user_password !== token) {
+          localStorage.setItem('app_token', settings.user_password)
+          setToken(settings.user_password)
+        } else if (role === 'admin' && settings.admin_password !== token) {
+          localStorage.setItem('app_token', settings.admin_password)
+          setToken(settings.admin_password)
+        }
+      }
+    } catch (err) {
+      triggerAlert('error', 'Failed to update settings')
+    }
+  }
+
+  const mealIcons = {
+    breakfast: <Coffee className="w-5 h-5" />,
+    lunch: <Utensils className="w-5 h-5" />,
+    dinner: <Moon className="w-5 h-5" />,
+    snack: <Candy className="w-5 h-5" />,
+    juice: <CupSoda className="w-5 h-5" />
+  }
+
+  if (!token) {
+    return (
+      <div className="login-wrapper">
+        <div className="glass-card login-card">
+          <form className="login-content" onSubmit={handleLogin}>
+            <div className="title-glow">Routine Tracker</div>
+            <div className="subtitle">Secure entry to health analytics dashboard</div>
+            {loginError && (
+              <div className="alert-message error">
+                <AlertCircle className="w-4 h-4" />
+                <span>{loginError}</span>
+              </div>
+            )}
+            <div className="input-group">
+              <label className="input-label">Access Password</label>
+              <div style={{ position: 'relative' }}>
+                <input 
+                  type="password" 
+                  className="glass-input" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter user or admin password"
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" className="glow-button">
+              <Lock className="w-4 h-4" />
+              <span>Unlock Dashboard</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  if (role === 'admin') {
+    return (
+      <div className="app-container">
+        {alert && (
+          <div className={`alert-message ${alert.type}`} style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999 }}>
+            {alert.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+            <span>{alert.message}</span>
+          </div>
+        )}
+
+        <header className="glass-card dashboard-header">
+          <div className="header-title-section">
+            <h1>Daily Routine Tracker - Admin Panel</h1>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
+              System reports & lacking nutrition records
+            </p>
+          </div>
+          <div className="header-controls">
+            <button className="control-btn" onClick={openSettingsModal}>
+              <Settings className="w-4 h-4" />
+              <span>Settings</span>
+            </button>
+            <button className="control-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5' }} onClick={handleLogout}>
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
+        <section className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="chart-title">
+            <Calendar style={{ color: 'var(--accent-purple)' }} className="w-5 h-5" />
+            <span>Day-wise Nutritional Gaps Report</span>
+          </div>
+          
+          {adminReport.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-secondary)' }}>
+              No health data logged in the database yet.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    <th style={{ padding: '1rem' }}>Date</th>
+                    <th style={{ padding: '1rem' }}>Meals Eaten</th>
+                    <th style={{ padding: '1rem' }}>Nutrients Total</th>
+                    <th style={{ padding: '1rem' }}>Nutritional Deficiencies</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminReport.map((day, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', verticalAlign: 'top' }}>
+                      <td style={{ padding: '1rem', fontWeight: '700', color: 'var(--accent-cyan)' }}>{day.date}</td>
+                      <td style={{ padding: '1rem', maxWidth: '300px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          {day.meals.map((meal, mIdx) => (
+                            <span key={mIdx} style={{ fontSize: '0.9rem' }}>{meal}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={{ padding: '1rem', fontSize: '0.9rem' }}>
+                        <div><strong>Calories:</strong> {Math.round(day.calories)} kcal</div>
+                        <div><strong>Protein:</strong> {Math.round(day.protein)}g</div>
+                        <div><strong>Vitamins A/C/D:</strong> {Math.round(day.vitamin_a)}mcg / {Math.round(day.vitamin_c)}mg / {Math.round(day.vitamin_d)}mcg</div>
+                        <div><strong>Calcium / Iron:</strong> {Math.round(day.calcium)}mg / {Math.round(day.iron)}mg</div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        {day.lacking.length === 0 ? (
+                          <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#a7f3d0', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '700' }}>
+                            Adequate Nutrition
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                            {day.lacking.map((item, lIdx) => (
+                              <span key={lIdx} style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.2rem 0.5rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '700' }}>
+                                Lacking {item}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {showSettings && (
+          <div className="settings-modal-overlay">
+            <div className="glass-card settings-modal">
+              <form onSubmit={saveSettingsModal}>
+                <div className="modal-header">
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Configuration</h2>
+                </div>
+                <div className="input-group">
+                  <label className="input-label">OpenRouter API Key</label>
+                  <input 
+                    type="password" 
+                    className="glass-input" 
+                    value={settings.openrouter_key}
+                    onChange={(e) => setSettings({ ...settings, openrouter_key: e.target.value })}
+                    placeholder="sk-or-..."
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">OpenRouter Model Name</label>
+                  <input 
+                    type="text" 
+                    className="glass-input" 
+                    value={settings.openrouter_model}
+                    onChange={(e) => setSettings({ ...settings, openrouter_model: e.target.value })}
+                    placeholder="google/gemini-2.5-flash"
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Change User Password</label>
+                  <input 
+                    type="text" 
+                    className="glass-input" 
+                    value={settings.user_password || ''}
+                    onChange={(e) => setSettings({ ...settings, user_password: e.target.value })}
+                  />
+                </div>
+                <div className="input-group">
+                  <label className="input-label">Change Admin Password</label>
+                  <input 
+                    type="text" 
+                    className="glass-input" 
+                    value={settings.admin_password || ''}
+                    onChange={(e) => setSettings({ ...settings, admin_password: e.target.value })}
+                  />
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="control-btn" onClick={() => setShowSettings(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="glow-button" style={{ width: 'auto' }}>
+                    Save Configuration
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="app-container">
+      {alert && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999
+        }} className={`alert-message ${alert.type}`}>
+          {alert.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span>{alert.message}</span>
+        </div>
+      )}
+
+      <header className="glass-card dashboard-header">
+        <div className="header-title-section">
+          <h1>Daily Routine Tracker</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.2rem' }}>
+            Smart nutrition planner & analytics
+          </p>
+        </div>
+        <div className="header-controls">
+          <div className="date-picker-wrapper">
+            <input 
+              type="date" 
+              className="date-input" 
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+          </div>
+          <button className="control-btn" onClick={openSettingsModal}>
+            <Settings className="w-4 h-4" />
+            <span>Settings</span>
+          </button>
+          <button className="control-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5' }} onClick={handleLogout}>
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="grid-layout">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <section className="glass-card">
+            <div className="chart-title">
+              <Utensils style={{ color: 'var(--accent-cyan)' }} className="w-5 h-5" />
+              <span>Log Meals</span>
+            </div>
+            <div className="meal-cards-grid">
+              {['breakfast', 'lunch', 'dinner', 'snack', 'juice'].map((type) => (
+                <div key={type} className="glass-card meal-row-card" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', width: '100%' }}>
+                    <div className={`meal-type-badge ${type}`}>
+                      {mealIcons[type]}
+                      <span>{type}</span>
+                    </div>
+                    <div className="meal-input-wrapper">
+                      <input 
+                        type="text" 
+                        className="glass-input" 
+                        value={meals[type] || ''}
+                        onChange={(e) => setMeals({ ...meals, [type]: e.target.value })}
+                        placeholder={`What did you eat for ${type}?`}
+                      />
+                      <button className="save-meal-btn" onClick={() => saveMeal(type)} disabled={saveStates[type] !== 'idle'}>
+                        {saveStates[type] === 'saving' && (
+                          <div className="loading-spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div>
+                        )}
+                        {saveStates[type] === 'saved' && (
+                          <CheckCircle2 className="w-4 h-4" style={{ color: '#10b981' }} />
+                        )}
+                        {saveStates[type] === 'idle' && (
+                          <Save className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  {loggedMeals[type] && loggedMeals[type].length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.8rem', paddingLeft: '2.5rem' }}>
+                      {loggedMeals[type].map((item, idx) => (
+                        <span key={idx} style={{
+                          background: 'rgba(255,255,255,0.06)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          padding: '0.3rem 0.7rem',
+                          borderRadius: '8px',
+                          fontSize: '0.85rem',
+                          color: 'var(--text-secondary)'
+                        }}>
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
+            <section className="glass-card chart-card">
+              <div className="chart-title">
+                <Sparkles style={{ color: 'var(--accent-purple)' }} className="w-5 h-5" />
+                <span>Macronutrient Breakdown</span>
+              </div>
+              <div style={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <BarChart data={nutrientData}>
+                    <XAxis dataKey="name" stroke="var(--text-secondary)" />
+                    <YAxis stroke="var(--text-secondary)" />
+                    <Tooltip 
+                      contentStyle={{ background: '#1e293b', borderColor: 'var(--glass-border)', color: '#fff' }}
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                    />
+                    <Bar dataKey="value" radius={[10, 10, 0, 0]}>
+                      {nutrientData.map((entry, index) => {
+                        const colors = ['var(--accent-amber)', 'var(--accent-cyan)', 'var(--accent-purple)', 'var(--accent-pink)'];
+                        return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
+                      })}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+
+            <section className="glass-card chart-card">
+              <div className="chart-title">
+                <Sparkles style={{ color: 'var(--accent-pink)' }} className="w-5 h-5" />
+                <span>Vitamins & Minerals (Normalized)</span>
+              </div>
+              <div style={{ width: '100%', height: 300, display: 'flex', justifyContent: 'center' }}>
+                <ResponsiveContainer>
+                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={microData}>
+                    <PolarGrid stroke="var(--glass-border)" />
+                    <PolarAngleAxis dataKey="subject" stroke="var(--text-secondary)" />
+                    <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="var(--text-secondary)" />
+                    <Radar name="Intake" dataKey="A" stroke="var(--accent-pink)" fill="var(--accent-pink)" fillOpacity={0.3} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div>
+          <section className="glass-card ai-card">
+            <div className="ai-header">
+              <div className="ai-title">
+                <Sparkles style={{ color: 'var(--accent-purple)' }} className="w-5 h-5" />
+                <span>AI Daily Gap Analysis</span>
+              </div>
+              <button 
+                className="glow-button" 
+                style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem' }} 
+                onClick={runAiAnalysis}
+                disabled={loadingAi}
+              >
+                {loadingAi ? <div className="loading-spinner"></div> : <span>Analyze Day</span>}
+              </button>
+            </div>
+            <div className="ai-content">
+              {aiAnalysis ? (
+                <div className="bullet-list">
+                  {aiAnalysis.split('\n').filter(line => line.trim()).map((line, i) => {
+                    const cleanLine = line.replace(/^-\s*/, '').replace(/^\*\s*/, '').replace(/^\d+\.\s*/, '');
+                    const parts = cleanLine.split(/\*\*([^*]+)\*\*/g);
+                    return (
+                      <div key={i} className="bullet-item">
+                        {parts.map((part, idx) => idx % 2 === 1 ? <strong key={idx} style={{ color: 'var(--accent-cyan)', fontWeight: '700' }}>{part}</strong> : part)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span style={{ color: 'var(--text-secondary)', display: 'block', textAlign: 'center', marginTop: '3rem' }}>
+                  Click "Analyze Day" to let OpenRouter review your food intake and nutritional balance.
+                </span>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      {showSettings && (
+        <div className="settings-modal-overlay">
+          <div className="glass-card settings-modal">
+            <form onSubmit={saveSettingsModal}>
+              <div className="modal-header">
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Configuration</h2>
+              </div>
+              <div className="input-group">
+                <label className="input-label">OpenRouter API Key</label>
+                <input 
+                  type="password" 
+                  className="glass-input" 
+                  value={settings.openrouter_key}
+                  onChange={(e) => setSettings({ ...settings, openrouter_key: e.target.value })}
+                  placeholder="sk-or-..."
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">OpenRouter Model Name</label>
+                <input 
+                  type="text" 
+                  className="glass-input" 
+                  value={settings.openrouter_model}
+                  onChange={(e) => setSettings({ ...settings, openrouter_model: e.target.value })}
+                  placeholder="google/gemini-2.5-flash"
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Health Conditions / Weaknesses</label>
+                <input 
+                  type="text" 
+                  className="glass-input" 
+                  value={settings.user_weakness || ''}
+                  onChange={(e) => setSettings({ ...settings, user_weakness: e.target.value })}
+                  placeholder="e.g. Iron deficiency, low energy, lactose intolerant"
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Change User Password</label>
+                <input 
+                  type="text" 
+                  className="glass-input" 
+                  value={settings.user_password || ''}
+                  onChange={(e) => setSettings({ ...settings, user_password: e.target.value })}
+                />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Change Admin Password</label>
+                <input 
+                  type="text" 
+                  className="glass-input" 
+                  value={settings.admin_password || ''}
+                  onChange={(e) => setSettings({ ...settings, admin_password: e.target.value })}
+                />
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="control-btn" onClick={() => setShowSettings(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="glow-button" style={{ width: 'auto' }}>
+                  Save Configuration
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

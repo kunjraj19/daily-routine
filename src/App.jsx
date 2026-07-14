@@ -214,9 +214,7 @@ export default function App() {
       } catch (err) {
         console.error("Supabase load error", err)
       }
-    }
-    
-    if (dayMeals.length === 0) {
+    } else {
       const db = getLocalDb()
       dayMeals = db.filter(m => m.date === selectedDate)
     }
@@ -320,7 +318,6 @@ export default function App() {
       }
     }
 
-    const db = getLocalDb()
     const newMeal = {
       id: Date.now(),
       date: selectedDate,
@@ -329,8 +326,6 @@ export default function App() {
       ...nutrients,
       sports: 'nutrition'
     }
-    db.push(newMeal)
-    saveLocalDb(db)
 
     const supabase = getSupabase()
     if (supabase) {
@@ -342,6 +337,10 @@ export default function App() {
       } catch (err) {
         console.error("Supabase insert error", err)
       }
+    } else {
+      const db = getLocalDb()
+      db.push(newMeal)
+      saveLocalDb(db)
     }
 
     triggerAlert('success', `Saved ${type} successfully!`)
@@ -371,9 +370,7 @@ export default function App() {
       } catch (err) {
         console.error("Supabase load error in AI analysis", err)
       }
-    }
-
-    if (dayMeals.length === 0) {
+    } else {
       const db = getLocalDb()
       dayMeals = db.filter(m => m.date === activeDate)
     }
@@ -455,9 +452,7 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
       } catch (err) {
         console.error("Supabase report load error", err)
       }
-    }
-
-    if (db.length === 0) {
+    } else {
       db = getLocalDb()
     }
 
@@ -526,8 +521,6 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
 
   const clearAllData = async () => {
     if (window.confirm("Are you sure you want to delete all logged meals and reset the database?")) {
-      localStorage.removeItem('meals_db')
-      
       const supabase = getSupabase()
       if (supabase) {
         try {
@@ -538,6 +531,8 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
         } catch (err) {
           console.error("Supabase clear error", err)
         }
+      } else {
+        localStorage.removeItem('meals_db')
       }
 
       triggerAlert('success', 'Database cleared successfully!')

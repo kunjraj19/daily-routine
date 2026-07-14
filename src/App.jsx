@@ -369,6 +369,18 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
     }
   }
 
+  const clearAllData = () => {
+    if (window.confirm("Are you sure you want to delete all logged meals and reset the database?")) {
+      localStorage.removeItem('meals_db')
+      triggerAlert('success', 'Database cleared successfully!')
+      loadDayData()
+      if (role === 'admin') {
+        loadAdminReport()
+      }
+      setShowSettings(false)
+    }
+  }
+
   const mealIcons = {
     breakfast: <Coffee className="w-5 h-5" />,
     lunch: <Utensils className="w-5 h-5" />,
@@ -549,6 +561,9 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                   />
                 </div>
                 <div className="modal-footer">
+                  <button type="button" className="control-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5', marginRight: 'auto' }} onClick={clearAllData}>
+                    Clear Data
+                  </button>
                   <button type="button" className="control-btn" onClick={() => setShowSettings(false)}>
                     Cancel
                   </button>
@@ -792,6 +807,9 @@ Assume the user is a vegetarian from Gujarat, India. Analyze this intake. Point 
                 />
               </div>
               <div className="modal-footer">
+                <button type="button" className="control-btn" style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5', marginRight: 'auto' }} onClick={clearAllData}>
+                  Clear Data
+                </button>
                 <button type="button" className="control-btn" onClick={() => setShowSettings(false)}>
                   Cancel
                 </button>
